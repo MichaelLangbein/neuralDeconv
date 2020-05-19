@@ -161,15 +161,15 @@ def randomImage(size, nrNodes):
 
 
 
-def createTrainingPair(size):
-    nrNodes = np.random.randint(10)
-    s1 = np.random.randint(10)
-    s2 = np.random.randint(10)
+def createTrainingPair(size, maxSpread=10, maxNodes=10):
+    nrNodes = np.random.randint(maxNodes) + 1
+    s1 = np.random.randint(maxSpread) + 1
+    s2 = np.random.randint(maxSpread) + 1
     cv = np.random.rand()
     angle = np.random.randint(180)
 
     base = randomImage(size, nrNodes)
-    k = gaussianKernel(15, s1, s2, cv)
+    k = gaussianKernel(maxSpread*2, s1, s2, cv)
     k = rotate(k, angle)
     im = conv(k, base)
 
