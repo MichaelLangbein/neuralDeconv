@@ -1,4 +1,3 @@
-import geopandas as gpd
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.linalg as scl
@@ -8,6 +7,7 @@ import scipy.fftpack as scf
 import scipy.stats as scst
 import skimage.restoration as sir
 import netCDF4 as nc
+import keras as k
 
 
 def tabling(f):
@@ -174,3 +174,26 @@ def createTrainingPair(size, maxSpread=10, maxNodes=10):
     im = conv(k, base)
 
     return base, im
+
+
+
+def createSimpleAutoencoder(imgWidth, imgHeight, nodes=[700, 500, 300, 100]):
+    obsSize = imgWidth * imgHeight
+    sparseSize = nodes[-1]
+
+    input = k.Input([obsSize])
+    x = input
+    for n in nodes:
+        x = k.layers.Dense(n, activation='sigmoid')(x)
+    encoder = k.Model(input, x)
+
+    decInput = k.Input([sparseSize])
+    y = decInput
+    for n in nodes[::-1]:
+        y = k.layers.Dense(n, activation='sigmoid')(y)
+    decoder = k.Model(decInput, y)
+
+    autoencoder = k.Model(input, decoder(encoder(input)))
+
+    return encoder, decoder, autoencoder
+
