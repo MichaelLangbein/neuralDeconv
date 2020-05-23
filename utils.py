@@ -41,18 +41,21 @@ def round(val):
 
 
 def distance(v1, v2):
-    x1, y1 = v1
-    x2, y2 = v2
-    return np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+    return np.hypot(v1, v2)
+
+
+def unitdoughnut(r):
+    d = 2*r + 1
+    rx, ry = d/2, d/2
+    x, y = np.indices((d, d))
+    return (np.abs(np.hypot(rx - x, ry - y)-r) < 0.5).astype(int)
 
 
 def point(R, C, cx, cy, radius):
-    mtrx = np.zeros((R, C))
-    for r in range(R):
-        for c in range(C):
-            if distance((r, c), (cx, cy)) <= radius:
-                mtrx[r, c] = 1
-    return mtrx
+    xx, yy = np.mgrid[:R, :C]
+    distance = np.hypot(xx - cx, yy - cy) 
+    circle = distance <= radius
+    return circle
 
 
 def rotate(image, degrees):
@@ -79,7 +82,10 @@ def line(R, C, sr, sc, er, ec):
         m = rotate(m, 90)
         return m
     else:
-        dRdC = dR / dC
+        if dC == 0 and dR == 0:
+            dRdC = 0
+        else:
+            dRdC = dR / dC
         m = np.zeros((R, C))
         for c in range(sc, ec +1):
             r = sr + dRdC * (c - sc)
@@ -184,16 +190,37 @@ def createSimpleAutoencoder(imgWidth, imgHeight, nodes=[700, 500, 300, 100]):
     input = k.Input([obsSize])
     x = input
     for n in nodes:
-        x = k.layers.Dense(n, activation='sigmoid')(x)
-    encoder = k.Model(input, x)
+        x = k.layers.Dense(n, activation='sigmoid', name=f"encoder_d{n}")(x)
+    encoder = k.Model(input, x, name='encoder')
 
     decInput = k.Input([sparseSize])
     y = decInput
     for n in nodes[::-1]:
-        y = k.layers.Dense(n, activation='sigmoid')(y)
-    decoder = k.Model(decInput, y)
+        y = k.layers.Dense(n, activation='sigmoid', name=f"decoder_d{n}")(y)
+    y = k.layers.Dense(obsSize, activation='sigmoid', name=f"decoder_d{n+1}")(y)
+    decoder = k.Model(decInput, y, name='decoder')
 
-    autoencoder = k.Model(input, decoder(encoder(input)))
+    autoencoder = k.Model(input, decoder(encoder(input)), name='autoencoder')
 
     return encoder, decoder, autoencoder
 
+
+
+def createConv2Autoencoder(imgHeight, imgWidth, channels, nodes=[]):
+    
+    input = k.Input(shape=(imgHeight, imgWidth, channels))
+
+    x = input
+    for i, n in enumerate(nodes):
+        x = k.layers.Conv2D(n, (3, 3), activation='relu', padding='same', name=f"encoder_conv{i}")(x)
+        x = k.layers.MaxPooling2D((2, 2), padding='same', name=f"encoder_maxp{i}")(x)
+
+    y = x
+    for i, n in enumerate(nodes[::-1]):
+        y = k.layers.Conv2D(8, (3, 3), activation='relu', padding='same', name=f"decoder_conv{i}")(y)
+        y = k.layers.UpSampling2D((2, 2), name=f"decoder_upspl{i}")(y)
+    y = k.layers.Conv2D(1, (3, 3), activation='sigmoid', padding='same', name=f"decoder_conv{i+1}")(y)
+
+    autoencoder = k.Model(input, y)
+
+    return autoencoder
