@@ -8,6 +8,41 @@ import scipy.stats as scst
 import skimage.restoration as sir
 import netCDF4 as nc
 import keras as k
+import json
+import shapely as sh
+import sentinelsat as ss
+import datetime as dt
+
+
+def readGeojsonToShapely(fileName):
+    with open(fileName) as f:
+        features = json.load(f)["features"]
+    col = sh.geometry.GeometryCollection(
+        [sh.geometry.shape(feature["geometry"]).buffer(0)
+         for feature in features])
+    return col
+
+
+def downloadS5pData(startDate, endDate, 
+                    targetDir='./downloads/', uname='s5pguest', pw='s5pguest', 
+                    url='https://scihub.copernicus.eu/dhus'):
+
+    ger = readGeojsonToShapely('./data/germany_outline.geojson')
+    footprint = sh.geometry.box(*(ger.bounds))
+
+    api = ss.SentinelAPI(uname, pw, url)
+    products = api.query(footprint.wkt,
+                     date=(startDate, endDate),
+                     platformname='Sentinel-5 Precursor',
+                     cloudcoverpercentage=(0, 30))
+    api.download_all(products, targetDir)
+    
+    # convert to Pandas DataFrame
+    # products_df = api.to_dataframe(products)
+
+    return products
+
+
 
 
 def tabling(f):
