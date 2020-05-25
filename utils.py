@@ -9,7 +9,7 @@ import skimage.restoration as sir
 import netCDF4 as nc
 import keras as k
 import json
-import shapely as sh
+import shapely.geometry as shg
 import sentinelsat as ss
 import datetime as dt
 
@@ -17,30 +17,39 @@ import datetime as dt
 def readGeojsonToShapely(fileName):
     with open(fileName) as f:
         features = json.load(f)["features"]
-    col = sh.geometry.GeometryCollection(
-        [sh.geometry.shape(feature["geometry"]).buffer(0)
+    col = shg.GeometryCollection(
+        [shg.shape(feature["geometry"]).buffer(0)
          for feature in features])
     return col
 
 
-def downloadS5pData(startDate, endDate, 
-                    targetDir='./downloads/', uname='s5pguest', pw='s5pguest', 
-                    url='https://scihub.copernicus.eu/dhus'):
+def downloadS5pData(startDate, endDate, footprint, targetDir='./downloads/', output='default'):
+    """
+        S5p is available under the same API as other S1-3, but under a different url and credentials.
+        Instead of https://scihub.copernicus.eu/dhus/ use https://s5phub.copernicus.eu/dhus/, 
+        and instead of your credentials use s5pguest/s5pguest.
+    """
 
-    ger = readGeojsonToShapely('./data/germany_outline.geojson')
-    footprint = sh.geometry.box(*(ger.bounds))
-
-    api = ss.SentinelAPI(uname, pw, url)
-    products = api.query(footprint.wkt,
-                     date=(startDate, endDate),
-                     platformname='Sentinel-5 Precursor',
-                     cloudcoverpercentage=(0, 30))
+    api = ss.SentinelAPI('s5pguest', 's5pguest', 'https://s5phub.copernicus.eu/dhus/')
+    products = api.query(
+                    area=footprint,
+                    area_relation='Intersects',
+                    date=(startDate, endDate),
+                    producttype = 'L2__NO2___',  #L2__CH4___
+                    platformname='Sentinel-5',
+                    processinglevel='L2'
+    )
     api.download_all(products, targetDir)
-    
-    # convert to Pandas DataFrame
-    # products_df = api.to_dataframe(products)
 
-    return products
+    if output == 'default':
+        return api, products
+    if output == 'geopandas':
+        return api, api.to_geodataframe(products)
+    if output == 'pandas':
+        return api, api.to_dataframe(products)
+    if output == 'geojson':
+        return api, api.to_geojson(products)
+
 
 
 
@@ -241,7 +250,7 @@ def createSimpleAutoencoder(imgWidth, imgHeight, nodes=[700, 500, 300, 100]):
 
 
 
-def createConv2Autoencoder(imgHeight, imgWidth, channels, nodes=[]):
+def createConv2Autoencoder(imgHeight, imgWidth, channels, nodes=[16, 8, 8]):
     
     input = k.Input(shape=(imgHeight, imgWidth, channels))
 
