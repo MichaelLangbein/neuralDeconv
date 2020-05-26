@@ -51,9 +51,21 @@ def downloadS5pData(startDate, endDate, footprint, targetDir='./downloads/', out
 
 
 def getS5pData(startDate, endDate, footprint):
-    """
-        loads data from local nc files
-    """
+    dataFeb = rio.open('netcdf:./downloads/data_2020_feb.nc:tcno2', 'r')
+    dataMar = rio.open('netcdf:./downloads/data_2020_mar.nc:tcno2', 'r')
+    return dataFeb, dataMar
+
+
+def getWindowFromS5pRasterioDataset(startDate, endDate, west, south, east, north, data):
+    bbox = shg.box(west, south, east, north)
+    delta = dt.timedelta(0, 6*60*60)
+    start = dt.datetime(startDate.year, startDate.month, 1)
+    dateIndexMap = {start + i*delta: i+1 for i in range(len(data.indexes))}
+    i0 = dateIndexMap[startDate]
+    i1 = dateIndexMap[endDate]
+    window, transf = riom.mask(data, [bbox], crop=True, indexes=[i for i in range(i0, i1+1)])
+    return window
+
 
 
 def getLkRaster(height, width):
@@ -61,8 +73,9 @@ def getLkRaster(height, width):
     west, south, east, north = ger.bounds
     affineTransform = riot.from_bounds(west, south, east, north, width, height)
 
-    lks = gpd.read_file('./data/landkreise.geojson')
-    data = [(geom, value) for geom, value in zip(lks.geometry, lks.index)]
+    lks = gpd.read_file('./data/landkreise_fallzahlen.json')
+    lks['density'] = lks['population'] / lks.geometry.area / 1000000
+    data = [(geom, value) for geom, value in zip(lks.geometry, lks['density'])]
 
     burned = riof.rasterize(
         data,
