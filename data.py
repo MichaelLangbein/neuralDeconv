@@ -4,6 +4,7 @@ import shapely.geometry as shg
 import sentinelsat as ss
 import datetime as dt
 import geopandas as gpd
+import rasterio as rio
 import rasterio.features as riof
 import rasterio.mask as riom
 import rasterio.crs as rioc
@@ -68,9 +69,15 @@ def getWindowFromS5pRasterioDataset(startDate, endDate, west, south, east, north
 
 
 
-def getLkRaster(height, width):
+def getBoundsGermany():
     ger = readGeojsonToShapely('./data/germany_outline.geojson')
     west, south, east, north = ger.bounds
+    return shg.box(west, south, east, north)
+
+
+def getLkRaster(height, width):
+    bbox = getBoundsGermany()
+    west, south, east, north = bbox.bounds
     affineTransform = riot.from_bounds(west, south, east, north, width, height)
 
     lks = gpd.read_file('./data/landkreise_fallzahlen.json')
@@ -124,4 +131,62 @@ def getWindowFromRasterioDataset(west, south, east, north, dataset):
     cropped, _ = riom.mask(dataset, [box], crop=True)
     return cropped
 
-    
+
+
+def rioGetShapes(dataset):
+    w = dataset.meta['width']
+    h = dataset.meta['height']
+    c = dataset.meta['count']
+    bounds = dataset.bounds
+    west = bounds.left
+    south = bounds.bottom
+    east = bounds.right
+    north = bounds.top
+    return (w, h, c), shg.box(west, south, east, north)
+
+
+def intersectGTandS5(groundTruthDataset, s5pDataset):
+    (cs, rs, ts), bboxS = rioGetShapes(s5pDataset)
+    (cg, rg, tg), bboxG = rioGetShapes(groundTruthDataset)
+    intersection = bboxS.intersection(bboxG)
+    groundTruthIS = riom.mask(groundTruthDataset, [intersection], crop=True)
+    s5pDataIS = riom.mask(s5pDataset, [intersection], crop=True)
+    return groundTruthIS, s5pDataIS
+
+
+def createTrainingPair(windowSize, timeSpan, npGroundTruthData, npS5Data):
+    T, R, C = npS5Data.shape
+    t = np.random.randint(T - timeSpan)
+    r = np.random.randint(R - windowSize)
+    c = np.random.randint(C - windowSize)
+    gtWindow = npGroundTruthData[r:r+windowSize, c:c+windowSize]
+    s5Window = npS5Data[t:t+timeSpan, r:r+windowSize, c:c+windowSize]
+    return s5Window, gtWindow
+
+
+def getShapelyBounds(dataset):
+    bounds = dataset.bounds
+    bbx = shg.box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+    return bbx
+
+
+def trainingDataGenerator(batchSize, imageSize, timeSpan):
+    bboxGermany = getBoundsGermany()
+    s5dataSet = rio.open('netcdf:./downloads/data_2020_feb.nc:tcno2', 'r')
+    s5data, transf = riom.mask(s5dataSet, [bboxGermany], crop=True)
+    T, R, C = s5data.shape
+    print(f"Study area: {T} * {R} * {C}")
+    _, _, gtData = getLkRaster(R, C)
+    while True:
+        xs = np.zeros((batchSize, imageSize, imageSize, 1))
+        ys = np.zeros((batchSize, imageSize, imageSize, 1))
+        for i in range(batchSize):
+            s5Window, gtWindow = createTrainingPair(imageSize, timeSpan, gtData, s5data)
+            s5WindowMean = np.mean(s5Window, axis=0)
+            gtMax = np.max(gtWindow)
+            s5Max = np.max(s5WindowMean)
+            gtWindow /= gtMax
+            s5WindowMean /= s5Max
+            xs[i, :, :, 0] = s5WindowMean # observation
+            ys[i, :, :, 0] = gtWindow # truth
+        yield xs, ys

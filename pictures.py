@@ -154,3 +154,14 @@ def createTrainingPair(size, maxSpread=10, maxNodes=10):
 
     return base, im
 
+
+def trainingDataGenerator(batchSize, imageSize, maxSpread=10, maxNodes=10):
+    while True:
+        xs = np.zeros((batchSize, imageSize, imageSize, 1))
+        ys = np.zeros((batchSize, imageSize, imageSize, 1))
+        for i in range(batchSize):
+            truth, obs = createTrainingPair(imageSize, maxSpread, maxNodes)
+            xs[i, :, :, 0] = obs
+            ys[i, :, :, 0] = truth
+        yield xs, ys
+
